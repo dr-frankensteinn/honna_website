@@ -249,7 +249,19 @@ function renderBucket() {
     </div>`).join('');
 }
 
+// Parts with nothing to show yet stay hidden, and appear once their data is added.
+function hideEmpty() {
+  const him = city('city_him'), her = city('city_her');
+  $('.tab[data-page="story"]').hidden = !S.timeline.length;
+  $('.countdown').hidden = !set('reunion_date');
+  $('#tempHim').closest('.panel').hidden = him.lat == null || him.lon == null;
+  $('#tempHer').closest('.panel').hidden = her.lat == null || her.lon == null;
+  $('#sinceLabel').hidden = !set('since_label');
+  $('#nightDate').hidden = !set('anniversary');
+}
+
 function renderUs() {
+  hideEmpty();
   $('#reunionLabel').textContent = set('reunion_label') || 'Reunion';
   const him = city('city_him'), her = city('city_her');
   $('#cityHim').textContent = him.name || set('name_him') || '—';
