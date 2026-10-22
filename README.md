@@ -7,7 +7,7 @@ The code is public. **Nothing personal is in it.** Names, stories, dates and pho
 ## Setup (once)
 
 1. **Supabase → SQL editor:** run `supabase/setup.sql`. This locks every table and creates a private `photos` storage bucket.
-2. **Supabase → Authentication → Users:** add both accounts with **Add user → Create new user** (email and password).
+2. **Supabase → Authentication → Users:** add the two accounts listed in `config.js` with **Add user → Create new user**, ticking "Auto Confirm User". Each password is that person's three lock-screen dates typed together.
 3. **Supabase → Authentication → Sign In / Providers:** turn **off** "Allow new users to sign up", so nobody else can create an account.
 4. **Supabase → SQL editor:** run your own private seed file (kept outside the repo; see `.gitignore`). It adds both emails to `members` and fills in the site details and first memories.
 5. Deploy the folder as a static site (Netlify: no build command, publish directory `/`).

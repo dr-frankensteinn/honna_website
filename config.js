@@ -3,5 +3,8 @@
 window.CONFIG = {
   supabaseUrl: 'https://dhmzdikzvkgozoreaiju.supabase.co',
   supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRobXpkaWt6dmtnb3pvcmVhaWp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzMDk4ODYsImV4cCI6MjA5MDg4NTg4Nn0.h1M_SmUI1I3UaCV5KQyS-N3eA0SUQ3idvDAu-5awxnE',
+  // The two sign-in accounts. Their passwords are the three dates typed on the lock screen,
+  // run together (year + first kiss + your date), so the dates themselves are never in the code.
+  accounts: ['her@honna.my', 'him@honna.my'],
   emailjs: { service: 'service_g1rz1mt', template: 'template_rnatuin', publicKey: 'T6Cb6b5afWAxtgXo' },
 };

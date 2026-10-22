@@ -41,11 +41,17 @@ $('#loginForm').addEventListener('submit', async e => {
   const btn = e.submitter;
   btn.disabled = true;
   $('#loginMsg').textContent = '';
-  const { data, error } = await sb.auth.signInWithPassword({ email: $('#email').value.trim(), password: $('#password').value });
+  // The third date decides whose account this is, so try each account with the same three dates.
+  const password = ['#key1', '#key2', '#key3'].map(id => $(id).value.trim()).join('');
+  let user = null;
+  for (const email of window.CONFIG.accounts) {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (!error) { user = data.user; break; }
+  }
   btn.disabled = false;
-  if (error) { $('#loginMsg').textContent = "That email and password don't match."; return; }
-  $('#password').value = '';
-  await enter(data.user);
+  if (!user) { $('#loginMsg').textContent = 'Incorrect'; return; }
+  e.target.reset();
+  await enter(user);
 });
 
 async function enter(user) {
