@@ -431,19 +431,25 @@ $('#uploadForm').addEventListener('submit', async e => {
   const btn = e.submitter, files = [...$('#photoFiles').files], caption = $('#photoCaption').value.trim();
   if (!files.length) return;
   btn.disabled = true;
-  let done = 0;
-  try {
-    for (const f of files) {
-      btn.textContent = `Uploading ${done + 1} of ${files.length}…`;
-      const path = await uploadImage(f);
-      const { error } = await sb.from('photos').insert({ path, caption, uploaded_by: S.me.email });
-      if (error) throw error;
-      done++;
+  // Three at a time; a photo that fails is skipped so one bad file doesn't stop a big batch.
+  let done = 0, next = 0;
+  const failed = [];
+  const worker = async () => {
+    while (next < files.length) {
+      const f = files[next++];
+      try {
+        const path = await uploadImage(f);
+        const { error } = await sb.from('photos').insert({ path, caption, uploaded_by: S.me.email });
+        if (error) { await removeImages(path); throw error; }
+        done++;
+      } catch (err) { console.warn(f.name, err); failed.push(f.name); }
+      btn.textContent = `Uploading ${done + failed.length} of ${files.length}…`;
     }
-    e.target.reset();
-    e.target.hidden = true;
-    toast(`Added ${done} photo${done === 1 ? '' : 's'}`);
-  } catch (err) { toast(err.message); }
+  };
+  btn.textContent = `Uploading 0 of ${files.length}…`;
+  await Promise.all([worker(), worker(), worker()]);
+  if (!failed.length) { e.target.reset(); e.target.hidden = true; }
+  toast(`Added ${done} photo${done === 1 ? '' : 's'}${failed.length ? `. ${failed.length} failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}` : ''}`);
   btn.disabled = false;
   btn.textContent = 'Upload';
   await loadAll();
