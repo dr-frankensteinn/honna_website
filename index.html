@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#141414">
+<title>Us.</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='14' fill='%23141414'/><text x='50' y='76' font-family='Impact,sans-serif' font-size='72' text-anchor='middle' fill='%23e50914'>U</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="loading" class="loading"><span class="logo">US.</span></div>
+
+<!-- SIGN IN -->
+<section id="login" class="login" hidden>
+  <header class="login-top"><span class="logo">US.</span></header>
+  <form id="loginForm" class="login-card">
+    <h1>Sign In</h1>
+    <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button class="btn-red" type="submit">Sign In</button>
+    <p id="loginMsg" class="login-msg" role="alert"></p>
+    <p class="login-note">This is private. Only two accounts can sign in.</p>
+  </form>
+</section>
+
+<!-- APP -->
+<div id="app" hidden>
+  <header id="nav" class="nav">
+    <button class="logo" data-act="go" data-page="home" aria-label="Home">US.</button>
+    <nav class="tabs">
+      <button class="tab" data-act="go" data-page="home">Home</button>
+      <button class="tab" data-act="go" data-page="story">Our Story</button>
+      <button class="tab" data-act="go" data-page="photos">Photos</button>
+      <button class="tab" data-act="go" data-page="bucket">Bucket List</button>
+      <button class="tab" data-act="go" data-page="us">Us</button>
+    </nav>
+    <div class="nav-right">
+      <span id="partnerStatus" class="status-pill" hidden></span>
+      <div class="profile">
+        <button id="profileBtn" class="avatar" data-act="menu" aria-label="Profile menu"></button>
+        <div id="profileMenu" class="menu" hidden>
+          <p id="menuName" class="menu-name"></p>
+          <button data-act="go" data-page="settings" data-role="admin">Settings</button>
+          <button data-act="go" data-page="corner" data-role="partner">My Corner</button>
+          <button data-act="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- HOME -->
+    <section id="page-home" class="page">
+      <div id="hero" class="hero"></div>
+      <div id="homeRows" class="rows"></div>
+    </section>
+
+    <!-- OUR STORY -->
+    <section id="page-story" class="page page-wrap" hidden>
+      <div class="page-head">
+        <h1>Our Story</h1>
+        <p id="sinceLabel" class="page-sub"></p>
+      </div>
+      <ol id="episodes" class="episodes"></ol>
+    </section>
+
+    <!-- PHOTOS -->
+    <section id="page-photos" class="page page-wrap" hidden>
+      <div class="page-head">
+        <h1>Photos</h1>
+        <button class="btn-white" data-act="uploadToggle"><i data-lucide="plus"></i>Add photos</button>
+      </div>
+      <form id="uploadForm" class="panel" hidden>
+        <label class="field">Photos<input id="photoFiles" type="file" accept="image/*" multiple required></label>
+        <label class="field">Caption (optional)<input id="photoCaption" type="text" maxlength="140"></label>
+        <p class="hint">Photos are resized and their location data is removed before upload.</p>
+        <div class="actions"><button class="btn-red" type="submit">Upload</button><button class="btn-grey" type="button" data-act="uploadToggle">Cancel</button></div>
+      </form>
+      <div id="photoGrid" class="photo-grid"></div>
+    </section>
+
+    <!-- BUCKET LIST -->
+    <section id="page-bucket" class="page page-wrap" hidden>
+      <div class="page-head"><h1>Bucket List</h1></div>
+      <div id="bucketCols" class="bucket-cols"></div>
+    </section>
+
+    <!-- US -->
+    <section id="page-us" class="page page-wrap" hidden>
+      <div class="page-head"><h1>Us</h1></div>
+      <div class="us-grid">
+        <div class="panel countdown">
+          <p class="eyebrow" id="reunionLabel">Reunion</p>
+          <p id="reunionTimer" class="big-num">—</p>
+        </div>
+        <div class="panel weather"><p class="eyebrow" id="cityHim">—</p><p class="big-num"><span id="tempHim">—</span><small>°C</small></p></div>
+        <div class="panel weather"><p class="eyebrow" id="cityHer">—</p><p class="big-num"><span id="tempHer">—</span><small>°C</small></p></div>
+        <blockquote id="vow" class="panel vow"></blockquote>
+      </div>
+      <div class="night">
+        <div class="night-head"><h2 id="nightTitle">That Night</h2><p id="nightDate" class="page-sub"></p></div>
+        <div class="night-frame"><canvas id="nightCanvas"></canvas></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS (admin) -->
+    <section id="page-settings" class="page page-wrap" hidden>
+      <div class="page-head"><h1>Settings</h1></div>
+      <div class="settings-grid">
+        <form id="memoryForm" class="panel">
+          <h2>Add a memory</h2>
+          <label class="field">Date<input id="m_sort_date" type="date"></label>
+          <label class="field">Label (optional, shown instead of the date)<input id="m_label" type="text"></label>
+          <label class="field">Title<input id="m_title" type="text" required></label>
+          <label class="field">What happened<textarea id="m_desc" rows="4" required></textarea></label>
+          <label class="field">Cover photo (optional)<input id="m_cover" type="file" accept="image/*"></label>
+          <label class="field">Note photo (optional)<input id="m_note" type="file" accept="image/*"></label>
+          <div class="actions"><button class="btn-red" type="submit">Add memory</button></div>
+        </form>
+        <form id="siteForm" class="panel">
+          <h2>Site details</h2>
+          <div class="two"><label class="field">His name<input id="s_name_him" type="text"></label><label class="field">Her name<input id="s_name_her" type="text"></label></div>
+          <div class="two"><label class="field">Anniversary<input id="s_anniversary" type="date"></label><label class="field">"Since" line<input id="s_since_label" type="text"></label></div>
+          <div class="two"><label class="field">Reunion date<input id="s_reunion_date" type="date"></label><label class="field">Reunion name<input id="s_reunion_label" type="text"></label></div>
+          <label class="field">Anniversary scene title<input id="s_night_title" type="text"></label>
+          <label class="field">The promise<textarea id="s_vow" rows="4"></textarea></label>
+          <fieldset class="city"><legend>His city</legend><input id="s_city_him_name" placeholder="Name"><input id="s_city_him_lat" placeholder="Latitude" inputmode="decimal"><input id="s_city_him_lon" placeholder="Longitude" inputmode="decimal"></fieldset>
+          <fieldset class="city"><legend>Her city</legend><input id="s_city_her_name" placeholder="Name"><input id="s_city_her_lat" placeholder="Latitude" inputmode="decimal"><input id="s_city_her_lon" placeholder="Longitude" inputmode="decimal"></fieldset>
+          <div class="actions"><button class="btn-red" type="submit">Save</button></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- MY CORNER (partner) -->
+    <section id="page-corner" class="page page-wrap" hidden>
+      <form id="statusForm" class="panel corner">
+        <h1 id="cornerHello">Hey</h1>
+        <p class="page-sub">How are you feeling?</p>
+        <label class="field">Status
+          <select id="statusInput">
+            <option value="Free">Free to talk</option>
+            <option value="Working">Working</option>
+            <option value="Sleeping">Sleeping</option>
+            <option value="Busy">Busy</option>
+            <option value="Missing You">Missing you</option>
+          </select>
+        </label>
+        <label class="field">Mood<input id="moodInput" type="text" placeholder="in a few words…" maxlength="80"></label>
+        <div class="actions"><button class="btn-red" type="submit">Update</button></div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<!-- MEMORY DETAILS -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <button class="modal-x" data-act="closeModal" aria-label="Close"><i data-lucide="x"></i></button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<!-- PHOTO VIEWER -->
+<div id="lightbox" class="lightbox" hidden>
+  <button class="lb-btn lb-close" data-act="closeLightbox" aria-label="Close"><i data-lucide="x"></i></button>
+  <button class="lb-btn lb-prev" data-act="lbPrev" aria-label="Previous"><i data-lucide="chevron-left"></i></button>
+  <figure><img id="lbImg" alt=""><figcaption id="lbCaption"></figcaption></figure>
+  <button class="lb-btn lb-next" data-act="lbNext" aria-label="Next"><i data-lucide="chevron-right"></i></button>
+  <button class="lb-btn lb-delete" data-act="lbDelete" aria-label="Delete photo"><i data-lucide="trash-2"></i></button>
+</div>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3.11.0/dist/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

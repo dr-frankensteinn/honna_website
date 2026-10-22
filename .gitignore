@@ -1,0 +1,10 @@
+# Personal content (stories, emails) lives here and only in the database.
+private/
+# Original photos never go in the repo; upload them through the site.
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.webp
+.DS_Store
+Thumbs.db
