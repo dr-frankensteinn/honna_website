@@ -80,7 +80,7 @@
       <form id="uploadForm" class="panel" hidden>
         <label class="field">Photos<input id="photoFiles" type="file" accept="image/*" multiple required></label>
         <label class="field">Caption (optional)<input id="photoCaption" type="text" maxlength="140"></label>
-        <p class="hint">Photos are resized and their location data is removed before upload.</p>
+        <p class="hint">Photos are resized and their location data is removed before upload. You can pick many at once.</p>
         <div class="actions"><button class="btn-red" type="submit">Upload</button><button class="btn-grey" type="button" data-act="uploadToggle">Cancel</button></div>
       </form>
       <div id="photoGrid" class="photo-grid"></div>
@@ -120,8 +120,7 @@
           <label class="field">Label (optional, shown instead of the date)<input id="m_label" type="text"></label>
           <label class="field">Title<input id="m_title" type="text" required></label>
           <label class="field">What happened<textarea id="m_desc" rows="4" required></textarea></label>
-          <label class="field">Cover photo (optional)<input id="m_cover" type="file" accept="image/*"></label>
-          <label class="field">Note photo (optional)<input id="m_note" type="file" accept="image/*"></label>
+          <label class="field">Photo (optional)<input id="m_cover" type="file" accept="image/*"></label>
           <div class="actions"><button class="btn-red" type="submit">Add memory</button></div>
         </form>
         <form id="siteForm" class="panel">

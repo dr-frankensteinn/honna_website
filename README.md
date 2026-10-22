@@ -2,28 +2,35 @@
 
 A private two-person site in a streaming-app style: memories, photos, a bucket list, a countdown and a status for each other.
 
-The code is public. **Nothing personal is in it.** Names, stories, dates and photos live only in Supabase, behind a sign-in, and only the two accounts listed in the `members` table can read them.
+The code is public. **Nothing personal is in it.** Names, stories, dates and photo links live in Supabase; photos live on Cloudinary.
 
-## Setup (once)
+## How it fits together
 
-1. **Supabase → SQL editor:** run `supabase/setup.sql`. This locks every table and creates a private `photos` storage bucket.
-2. **Supabase → Authentication → Users:** add the two accounts listed in `config.js` with **Add user → Create new user**, ticking "Auto Confirm User". Each password is that person's three lock-screen dates typed together.
-3. **Supabase → Authentication → Sign In / Providers:** turn **off** "Allow new users to sign up", so nobody else can create an account.
-4. **Supabase → SQL editor:** run your own private seed file (kept outside the repo; see `.gitignore`). It adds both emails to `members` and fills in the site details and first memories.
-5. Deploy the folder as a static site (Netlify: no build command, publish directory `/`).
+| Piece | Where |
+|---|---|
+| Memories | Supabase `timeline` table (`date`, `title`, `desc`, `journal_img`) |
+| Photos | Uploaded to Cloudinary; links in the Supabase `photos` table |
+| Bucket list | Supabase `bucketlist` table (`together`, or a person's name in lower case) |
+| Her status | Supabase `status` table, row 1 |
+| Site details (names, dates, cities, the promise) | Supabase `status` table, row 2, as JSON. Edited from **Settings** |
+| Lock screen | Checks the three codes against one-way fingerprints in `config.js` |
+
+The lock screen only hides the page; the tables themselves are open to anyone who has the public key.
 
 ## Day to day
 
-- **Photos → Add photos:** uploads are resized in the browser and their location data is removed before they leave the phone.
-- **Settings** (admin account): add memories with a cover photo and a note photo, and edit names, dates, cities and the promise.
-- **My Corner** (partner account): set a status and mood; the other person gets an email through EmailJS.
+- **Photos → Add photos:** pick as many as you like. They're resized in the browser and their location data is removed before upload.
+- **Settings** (his codes): add memories and edit names, dates, cities and the promise.
+- **My Corner** (her codes): set a status and mood; he gets an email through EmailJS.
 
-## Files
+## Changing a lock code
 
-| File | What it is |
-|---|---|
-| `index.html` | Page layout |
-| `styles.css` | The look |
-| `app.js` | Sign-in, loading from Supabase, uploads |
-| `config.js` | Public keys only (the Supabase anon key is safe to publish; access is enforced by the rules in `setup.sql`) |
-| `supabase/setup.sql` | Tables, row-level security and storage rules |
+Run this with the new three codes typed together and paste the result into `config.js` (`admin` or `partner`):
+
+```
+python -c "import hashlib;print(hashlib.pbkdf2_hmac('sha256',b'NEWCODES',b'honna.my/lock',150000).hex())"
+```
+
+## Deploying
+
+Netlify, linked to this repo: no build command, publish directory `/`. `netlify/functions/keepalive.mjs` touches the database once a day so the free Supabase project doesn't pause.

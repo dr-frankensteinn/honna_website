@@ -1,26 +1,35 @@
-// Everything personal (names, stories, photos, dates) comes from the database after sign-in.
+// Everything personal (names, stories, photos, dates) comes from the database.
 // Nothing personal belongs in this file: the repo is public.
 
-const { supabaseUrl, supabaseKey, emailjs: EJ } = window.CONFIG;
+const { supabaseUrl, supabaseKey, cloudinary: CL, emailjs: EJ, lock: LOCK } = window.CONFIG;
 const sb = supabase.createClient(supabaseUrl, supabaseKey);
-const BUCKET = 'photos';
+const SETTINGS_ROW = 2; // the status table's row 2 holds the site details as JSON in `mood`
+const ROLE_KEY = 'us.role';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = () => lucide.createIcons();
 
-const S = { me: null, settings: {}, timeline: [], photos: [], bucket: [], status: null, urls: {} };
+const S = { me: null, settings: {}, timeline: [], photos: [], bucket: [], status: null };
 const set = k => S.settings[k] || '';
-const city = k => { try { return JSON.parse(set(k)) || {}; } catch { return {}; } };
+const city = k => { const c = S.settings[k]; if (c && typeof c === 'object') return c; try { return JSON.parse(c) || {}; } catch { return {}; } };
 const isAdmin = () => S.me?.role === 'admin';
+const myName = () => set(isAdmin() ? 'name_him' : 'name_her');
 let statusTimer, clockTimer, page = 'home';
 
-// ---------------------------------------------------------------- sign in --
+// ---------------------------------------------------------------- lock ----
+
+async function fingerprint(code) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(LOCK.salt), iterations: LOCK.iterations }, key, 256);
+  return [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 async function boot() {
+  let role = null;
+  try { role = localStorage.getItem(ROLE_KEY); } catch {}
   try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) await enter(session.user);
+    if (role === 'admin' || role === 'partner') await enter(role);
     else showLogin();
   } catch (e) {
     console.error(e);
@@ -41,37 +50,26 @@ $('#loginForm').addEventListener('submit', async e => {
   const btn = e.submitter;
   btn.disabled = true;
   $('#loginMsg').textContent = '';
-  // The third date decides whose account this is, so try each account with the same three dates.
-  const password = ['#key1', '#key2', '#key3'].map(id => $(id).value.trim()).join('');
-  let user = null;
-  for (const email of window.CONFIG.accounts) {
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (!error) { user = data.user; break; }
-  }
+  const fp = await fingerprint(['#key1', '#key2', '#key3'].map(id => $(id).value.trim()).join(''));
+  const role = fp === LOCK.admin ? 'admin' : fp === LOCK.partner ? 'partner' : null;
   btn.disabled = false;
-  if (!user) { $('#loginMsg').textContent = 'Incorrect'; return; }
+  if (!role) { $('#loginMsg').textContent = 'Incorrect'; return; }
   e.target.reset();
-  await enter(user);
+  try { localStorage.setItem(ROLE_KEY, role); } catch {}
+  await enter(role);
 });
 
-async function enter(user) {
-  const { data: members, error } = await sb.from('members').select('*');
-  const me = (members || []).find(m => m.email.toLowerCase() === user.email.toLowerCase());
-  if (error || !me) {
-    await sb.auth.signOut();
-    showLogin("This account isn't on the list.");
-    return;
-  }
-  S.me = me;
+async function enter(role) {
+  S.me = { role };
   $('#login').hidden = true;
   $('#app').hidden = false;
-  document.querySelectorAll('[data-role]').forEach(el => { el.hidden = el.dataset.role !== me.role; });
-  const av = $('#profileBtn');
-  av.textContent = (me.display_name || me.email)[0].toUpperCase();
-  av.className = `avatar ${me.role}`;
-  $('#menuName').textContent = me.display_name || me.email;
-
+  document.querySelectorAll('[data-role]').forEach(el => { el.hidden = el.dataset.role !== role; });
   await loadAll();
+  const name = myName() || (isAdmin() ? 'Admin' : 'Me');
+  const av = $('#profileBtn');
+  av.textContent = name[0].toUpperCase();
+  av.className = `avatar ${role}`;
+  $('#menuName').textContent = name;
   go('home');
   checkAnniversary();
   try { emailjs.init(EJ.publicKey); } catch (e) { console.warn('EmailJS:', e); }
@@ -79,47 +77,34 @@ async function enter(user) {
   statusTimer = setInterval(refreshStatus, 30000);
 }
 
-async function signOut() {
+function signOut() {
   clearInterval(statusTimer);
   stopNight();
-  await sb.auth.signOut();
-  Object.assign(S, { me: null, settings: {}, timeline: [], photos: [], bucket: [], status: null, urls: {} });
+  try { localStorage.removeItem(ROLE_KEY); } catch {}
+  Object.assign(S, { me: null, settings: {}, timeline: [], photos: [], bucket: [], status: null });
   showLogin();
 }
 
 // ------------------------------------------------------------------- data --
 
 async function loadAll() {
-  const [st, tl, ph, bl, stt] = await Promise.all([
-    sb.from('settings').select('*'),
-    sb.from('timeline').select('*').order('sort_date', { ascending: true, nullsFirst: false }).order('id'),
+  const [tl, ph, bl, st] = await Promise.all([
+    sb.from('timeline').select('*').order('id'),
     sb.from('photos').select('*').order('id', { ascending: false }),
     sb.from('bucketlist').select('*').order('id'),
-    sb.from('status').select('*').eq('id', 1).maybeSingle(),
+    sb.from('status').select('*').in('id', [1, SETTINGS_ROW]),
   ]);
-  [st, tl, ph, bl, stt].forEach(r => r.error && console.error(r.error));
-  S.settings = Object.fromEntries((st.data || []).map(r => [r.key, r.value]));
+  [tl, ph, bl, st].forEach(r => r.error && console.error(r.error));
+  const rows = st.data || [];
+  S.status = rows.find(r => r.id === 1) || null;
+  try { S.settings = JSON.parse(rows.find(r => r.id === SETTINGS_ROW)?.mood || '{}'); } catch { S.settings = {}; }
   S.timeline = tl.data || [];
   S.photos = ph.data || [];
   S.bucket = bl.data || [];
-  S.status = stt.data;
-  await signPaths();
   renderAll();
 }
 
-// Photos sit in a private bucket, so each one needs a short-lived signed link.
-async function signPaths() {
-  const paths = [...S.photos.map(p => p.path), ...S.timeline.flatMap(t => [t.image_path, t.note_path])]
-    .filter(p => p && !S.urls[p]);
-  if (!paths.length) return;
-  const { data, error } = await sb.storage.from(BUCKET).createSignedUrls(paths, 60 * 60 * 12);
-  if (error) { console.error(error); return; }
-  data.forEach(d => { if (d.signedUrl) S.urls[d.path] = d.signedUrl; });
-}
-
-// Older photos were stored on Cloudinary as plain links (`url`); new ones are private (`path`).
-const src = (path, legacy) => (path ? S.urls[path] || '' : legacy || '');
-const shownPhotos = () => S.photos.filter(p => src(p.path, p.url));
+const shownPhotos = () => S.photos.filter(p => p.url);
 
 // Resize in the browser before upload. Redrawing on a canvas also drops EXIF, including GPS location.
 async function shrink(file, max = 2000) {
@@ -135,16 +120,14 @@ async function shrink(file, max = 2000) {
 }
 
 async function uploadImage(file) {
-  const blob = await shrink(file);
-  const path = `${crypto.randomUUID()}.jpg`;
-  const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' });
-  if (error) throw error;
-  return path;
-}
-
-async function removeImages(...paths) {
-  const list = paths.filter(Boolean);
-  if (list.length) await sb.storage.from(BUCKET).remove(list);
+  const fd = new FormData();
+  fd.append('file', await shrink(file));
+  fd.append('upload_preset', CL.preset);
+  fd.append('folder', CL.folder);
+  const r = await fetch(`https://api.cloudinary.com/v1_1/${CL.cloud}/image/upload`, { method: 'POST', body: fd });
+  const d = await r.json();
+  if (!d.secure_url) throw new Error(d.error?.message || 'Upload failed');
+  return d.secure_url;
 }
 
 // ----------------------------------------------------------------- render --
@@ -170,9 +153,10 @@ function countdownText() {
 }
 
 function renderHero() {
-  const withImg = [...S.timeline].reverse().find(t => src(t.image_path));
+  const withImg = [...S.timeline].reverse().find(t => t.journal_img);
   const featured = withImg || S.timeline[S.timeline.length - 1];
-  const img = withImg ? src(withImg.image_path) : (shownPhotos()[0] ? src(shownPhotos()[0].path, shownPhotos()[0].url) : '');
+  const photos = shownPhotos();
+  const img = withImg ? withImg.journal_img : photos.length ? photos[Math.floor(Math.random() * Math.min(photos.length, 30))].url : '';
   const cd = countdownText();
   $('#hero').innerHTML = `
     ${img ? `<img class="hero-img" src="${esc(img)}" alt="">` : ''}
@@ -181,7 +165,7 @@ function renderHero() {
       <p class="hero-kicker"><span class="logo">U</span>${featured ? 'MEMORY' : 'OUR STORY'}</p>
       <h1 class="hero-title">${esc(featured?.title || 'Our Story')}</h1>
       ${cd ? `<p class="hero-meta"><span class="new">${esc(set('reunion_label') || 'Reunion')}</span> in ${esc(cd)}</p>` : ''}
-      <p class="hero-desc">${esc(featured?.desc || 'Add your first memory and photos to fill this up.')}</p>
+      <p class="hero-desc">${esc(featured?.desc || (photos.length ? `${photos.length} photos and counting.` : 'Add your first memory and photos to fill this up.'))}</p>
       <div class="hero-actions">
         <button class="btn-white" data-act="play"><i data-lucide="play"></i>Play</button>
         ${featured ? `<button class="btn-grey" data-act="info" data-id="${featured.id}"><i data-lucide="info"></i>More Info</button>` : ''}
@@ -190,19 +174,21 @@ function renderHero() {
 }
 
 function memoryCard(t) {
-  const im = src(t.image_path);
   return `<button class="card" data-act="info" data-id="${t.id}">
-    ${im ? `<img src="${esc(im)}" alt="" loading="lazy">` : `<span class="card-blank">${esc(t.title)}</span>`}
+    ${t.journal_img ? `<img src="${esc(t.journal_img)}" alt="" loading="lazy">` : `<span class="card-blank">${esc(t.title)}</span>`}
     <span class="card-label"><b>${esc(t.title)}</b><small>${esc(t.date)}</small></span>
   </button>`;
 }
 
 function photoCard(p, i) {
   return `<button class="card" data-act="photo" data-i="${i}">
-    <img src="${esc(src(p.path, p.url))}" alt="${esc(p.caption)}" loading="lazy">
+    <img src="${esc(thumb(p.url, 600))}" alt="${esc(p.caption)}" loading="lazy">
     ${p.caption ? `<span class="card-label"><b>${esc(p.caption)}</b></span>` : ''}
   </button>`;
 }
+
+// Cloudinary can serve a smaller copy on the fly; rows and the grid don't need full-size photos.
+const thumb = (url, w) => url.includes('/image/upload/') ? url.replace('/image/upload/', `/image/upload/c_limit,w_${w},q_auto,f_auto/`) : url;
 
 const row = (title, items) => items.length ? `<section class="row"><h2>${esc(title)}</h2><div class="track">${items.join('')}</div></section>` : '';
 
@@ -211,37 +197,46 @@ function renderRows() {
   const todo = S.bucket.filter(b => b.category === 'together' && !b.done).slice(0, 10);
   const html = [
     row('Our Story', S.timeline.map(memoryCard)),
+    row('Recently Added', photos.slice(0, 20).map((p, i) => photoCard(p, i))),
     row('Top 10 Things To Do Together', todo.map((b, i) => `<button class="top" data-act="go" data-page="bucket"><span class="top-n">${i + 1}</span><span class="top-tile">${esc(b.text)}</span></button>`)),
-    row('Recently Added', photos.slice(0, 20).map(photoCard)),
-    row('Throwbacks', photos.slice(20).map((p, i) => photoCard(p, i + 20))),
+    ...chunks(photos.slice(20), 25).map((part, n) => row(n ? 'More Photos' : 'Throwbacks', part.map((p, i) => photoCard(p, 20 + n * 25 + i)))),
   ].join('');
   $('#homeRows').innerHTML = html || '<p class="empty-row">Nothing here yet. Add memories in Settings and photos in Photos.</p>';
 }
 
+const chunks = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
+
 function renderStory() {
   $('#sinceLabel').textContent = set('since_label');
-  $('#episodes').innerHTML = S.timeline.map((t, i) => {
-    const im = src(t.image_path);
-    return `<li class="episode" tabindex="0" data-act="info" data-id="${t.id}">
+  $('#episodes').innerHTML = S.timeline.map((t, i) => `
+    <li class="episode" tabindex="0" data-act="info" data-id="${t.id}">
       <span class="ep-n">${i + 1}</span>
-      <div class="ep-thumb">${im ? `<img src="${esc(im)}" alt="" loading="lazy">` : `<span class="card-blank">${esc(t.title)}</span>`}</div>
+      <div class="ep-thumb">${t.journal_img ? `<img src="${esc(thumb(t.journal_img, 500))}" alt="" loading="lazy">` : `<span class="card-blank">${esc(t.title)}</span>`}</div>
       <div><div class="ep-top"><h3>${esc(t.title)}</h3><span>${esc(t.date)}</span></div><p class="ep-desc">${esc(t.desc)}</p></div>
-    </li>`;
-  }).join('') || '<li class="empty">No memories yet.</li>';
+    </li>`).join('') || '<li class="empty">No memories yet.</li>';
 }
 
 function renderPhotos() {
   const photos = shownPhotos();
   $('#photoGrid').innerHTML = photos.map((p, i) => `
     <button class="photo" data-act="photo" data-i="${i}">
-      <img src="${esc(src(p.path, p.url))}" alt="${esc(p.caption)}" loading="lazy">
+      <img src="${esc(thumb(p.url, 700))}" alt="${esc(p.caption)}" loading="lazy">
       ${p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ''}
     </button>`).join('') || '<p class="empty">No photos yet. Add the first one.</p>';
 }
 
+// Bucket categories are 'together' plus each person's name in lower case, as the list has always stored them.
+function bucketCols() {
+  const cols = [['together', 'Together']];
+  for (const k of ['name_her', 'name_him']) if (set(k)) cols.push([set(k).toLowerCase(), set(k)]);
+  for (const cat of new Set(S.bucket.map(b => b.category))) {
+    if (cat && !cols.some(c => c[0] === cat)) cols.push([cat, cat[0].toUpperCase() + cat.slice(1)]);
+  }
+  return cols;
+}
+
 function renderBucket() {
-  const cols = [['together', 'Together'], ['her', set('name_her') || 'Her'], ['him', set('name_him') || 'Him']];
-  $('#bucketCols').innerHTML = cols.map(([cat, title]) => `
+  $('#bucketCols').innerHTML = bucketCols().map(([cat, title]) => `
     <div class="panel bucket">
       <h2>${esc(title)}</h2>
       <ul>${S.bucket.filter(b => b.category === cat).map(b => `
@@ -250,7 +245,7 @@ function renderBucket() {
           <span class="b-text">${esc(b.text)}</span>
           <button class="b-del" data-act="delBucket" data-id="${b.id}" aria-label="Remove"><i data-lucide="x"></i></button>
         </li>`).join('')}</ul>
-      <form class="b-add" data-cat="${cat}"><input type="text" placeholder="Add…" maxlength="120" aria-label="Add to ${esc(title)}"><button class="btn-red" type="submit" aria-label="Add"><i data-lucide="plus"></i></button></form>
+      <form class="b-add" data-cat="${esc(cat)}"><input type="text" placeholder="Add…" maxlength="120" aria-label="Add to ${esc(title)}"><button class="btn-red" type="submit" aria-label="Add"><i data-lucide="plus"></i></button></form>
     </div>`).join('');
 }
 
@@ -262,7 +257,7 @@ function renderUs() {
   $('#vow').textContent = set('vow') ? `“${set('vow')}”` : '';
   $('#nightTitle').textContent = set('night_title') || 'That Night';
   $('#nightDate').textContent = set('anniversary') ? fmtDate(set('anniversary')) : '';
-  $('#cornerHello').textContent = `Hey, ${S.me?.display_name || 'you'}`;
+  $('#cornerHello').textContent = `Hey, ${myName() || 'you'}`;
   tickCountdown();
   clearInterval(clockTimer);
   clockTimer = setInterval(tickCountdown, 1000);
@@ -339,16 +334,13 @@ window.addEventListener('scroll', () => $('#nav').classList.toggle('solid', scro
 function openMemory(id) {
   const t = S.timeline.find(x => x.id === id);
   if (!t) return;
-  const im = src(t.image_path), note = src(t.note_path);
   $('#modalBody').innerHTML = `
-    <div class="m-hero">${im ? `<img src="${esc(im)}" alt="">` : ''}<h2 id="modalTitle">${esc(t.title)}</h2></div>
+    <div class="m-hero">${t.journal_img ? `<img src="${esc(t.journal_img)}" alt="">` : ''}<h2 id="modalTitle">${esc(t.title)}</h2></div>
     <div class="m-body">
       <p class="m-meta">${esc(t.date)}</p>
       <p class="m-desc">${esc(t.desc)}</p>
-      ${note ? `<img class="note-img" src="${esc(note)}" alt="Note">` : ''}
       ${isAdmin() ? `<div class="m-admin">
-        <label class="btn-grey"><i data-lucide="image"></i>${im ? 'Change' : 'Add'} cover<input type="file" accept="image/*" data-field="image_path" data-id="${t.id}"></label>
-        <label class="btn-grey"><i data-lucide="notebook-pen"></i>${note ? 'Change' : 'Add'} note<input type="file" accept="image/*" data-field="note_path" data-id="${t.id}"></label>
+        <label class="btn-grey"><i data-lucide="image"></i>${t.journal_img ? 'Change' : 'Add'} photo<input type="file" accept="image/*" data-id="${t.id}"></label>
         <button class="btn-grey" data-act="delMemory" data-id="${t.id}"><i data-lucide="trash-2"></i>Delete</button>
       </div>` : ''}
     </div>`;
@@ -363,16 +355,14 @@ function closeModal() {
 }
 
 $('#modal').addEventListener('change', async e => {
-  const input = e.target.closest('input[type=file][data-field]');
+  const input = e.target.closest('input[type=file][data-id]');
   if (!input?.files[0]) return;
-  const id = +input.dataset.id, field = input.dataset.field;
-  const t = S.timeline.find(x => x.id === id);
+  const id = +input.dataset.id;
   toast('Uploading…');
   try {
-    const path = await uploadImage(input.files[0]);
-    const { error } = await sb.from('timeline').update({ [field]: path }).eq('id', id);
+    const url = await uploadImage(input.files[0]);
+    const { error } = await sb.from('timeline').update({ journal_img: url }).eq('id', id);
     if (error) throw error;
-    await removeImages(t[field]);
     await loadAll();
     openMemory(id);
     toast('Saved');
@@ -384,7 +374,6 @@ async function deleteMemory(id) {
   if (!t || !confirm(`Delete "${t.title}"?`)) return;
   const { error } = await sb.from('timeline').delete().eq('id', id);
   if (error) { toast(error.message); return; }
-  await removeImages(t.image_path, t.note_path);
   closeModal();
   await loadAll();
   toast('Memory deleted');
@@ -395,15 +384,13 @@ $('#memoryForm').addEventListener('submit', async e => {
   const btn = e.submitter;
   btn.disabled = true;
   try {
-    const sortDate = $('#m_sort_date').value || null;
+    const day = $('#m_sort_date').value;
     const row = {
-      sort_date: sortDate,
-      date: $('#m_label').value.trim() || (sortDate ? fmtDate(sortDate) : ''),
+      date: $('#m_label').value.trim() || (day ? fmtDate(day) : ''),
       title: $('#m_title').value.trim(),
       desc: $('#m_desc').value.trim(),
+      journal_img: $('#m_cover').files[0] ? await uploadImage($('#m_cover').files[0]) : null,
     };
-    if ($('#m_cover').files[0]) row.image_path = await uploadImage($('#m_cover').files[0]);
-    if ($('#m_note').files[0]) row.note_path = await uploadImage($('#m_note').files[0]);
     const { error } = await sb.from('timeline').insert(row);
     if (error) throw error;
     e.target.reset();
@@ -418,12 +405,13 @@ $('#siteForm').addEventListener('submit', async e => {
   const btn = e.submitter;
   btn.disabled = true;
   const num = id => { const v = $(id).value.trim(); return v === '' ? null : Number(v); };
-  const rows = ['name_him', 'name_her', 'anniversary', 'since_label', 'reunion_date', 'reunion_label', 'night_title', 'vow']
-    .map(k => ({ key: k, value: $(`#s_${k}`).value.trim() }));
+  const next = { ...S.settings };
+  ['name_him', 'name_her', 'anniversary', 'since_label', 'reunion_date', 'reunion_label', 'night_title', 'vow']
+    .forEach(k => { next[k] = $(`#s_${k}`).value.trim(); });
   for (const who of ['him', 'her']) {
-    rows.push({ key: `city_${who}`, value: JSON.stringify({ name: $(`#s_city_${who}_name`).value.trim(), lat: num(`#s_city_${who}_lat`), lon: num(`#s_city_${who}_lon`) }) });
+    next[`city_${who}`] = { name: $(`#s_city_${who}_name`).value.trim(), lat: num(`#s_city_${who}_lat`), lon: num(`#s_city_${who}_lon`) };
   }
-  const { error } = await sb.from('settings').upsert(rows, { onConflict: 'key' });
+  const { error } = await sb.from('status').upsert({ id: SETTINGS_ROW, status: 'settings', mood: JSON.stringify(next) });
   btn.disabled = false;
   if (error) { toast(error.message); return; }
   await loadAll();
@@ -444,9 +432,9 @@ $('#uploadForm').addEventListener('submit', async e => {
     while (next < files.length) {
       const f = files[next++];
       try {
-        const path = await uploadImage(f);
-        const { error } = await sb.from('photos').insert({ path, caption, uploaded_by: S.me.email });
-        if (error) { await removeImages(path); throw error; }
+        const url = await uploadImage(f);
+        const { error } = await sb.from('photos').insert({ url, caption });
+        if (error) throw error;
         done++;
       } catch (err) { console.warn(f.name, err); failed.push(f.name); }
       btn.textContent = `Uploading ${done + failed.length} of ${files.length}…`;
@@ -479,9 +467,11 @@ function showSlide() {
   const photos = shownPhotos();
   lb.i = (lb.i + photos.length) % photos.length;
   const p = photos[lb.i];
-  $('#lbImg').src = src(p.path, p.url);
+  $('#lbImg').src = thumb(p.url, 1800);
   $('#lbImg').alt = p.caption || '';
   $('#lbCaption').textContent = p.caption || '';
+  const ahead = photos[(lb.i + 1) % photos.length];
+  if (ahead) new Image().src = thumb(ahead.url, 1800);
 }
 
 function stepLightbox(d) { lb.i += d; showSlide(); }
@@ -497,7 +487,6 @@ async function deletePhoto() {
   if (!p || !confirm('Delete this photo for both of you?')) return;
   const { error } = await sb.from('photos').delete().eq('id', p.id);
   if (error) { toast(error.message); return; }
-  await removeImages(p.path);
   closeLightbox();
   await loadAll();
   toast('Photo deleted');
@@ -509,10 +498,11 @@ $('#bucketCols').addEventListener('submit', async e => {
   e.preventDefault();
   const input = e.target.querySelector('input'), text = input.value.trim();
   if (!text) return;
-  const { error } = await sb.from('bucketlist').insert({ text, category: e.target.dataset.cat, done: false });
+  const cat = e.target.dataset.cat;
+  const { error } = await sb.from('bucketlist').insert({ text, category: cat, done: false });
   if (error) { toast(error.message); return; }
   await reloadBucket();
-  document.querySelector(`.b-add[data-cat="${e.target.dataset.cat}"] input`).focus();
+  [...document.querySelectorAll('.b-add')].find(f => f.dataset.cat === cat)?.querySelector('input').focus();
 });
 
 async function toggleBucket(id) {
@@ -544,7 +534,7 @@ async function reloadBucket() {
 $('#statusForm').addEventListener('submit', async e => {
   e.preventDefault();
   const status = $('#statusInput').value, mood = $('#moodInput').value.trim();
-  const { error } = await sb.from('status').upsert({ id: 1, status, mood, updated_at: new Date().toISOString() });
+  const { error } = await sb.from('status').upsert({ id: 1, status, mood });
   if (error) { toast(error.message); return; }
   S.status = { id: 1, status, mood };
   renderStatus();
