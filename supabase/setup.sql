@@ -86,6 +86,13 @@ create policy members_only on public.photos     for all to authenticated using (
 create policy members_only on public.bucketlist for all to authenticated using (public.is_member()) with check (public.is_member());
 create policy members_only on public.status     for all to authenticated using (public.is_member()) with check (public.is_member());
 
+-- Keep-alive -----------------------------------------------------------------
+-- Free projects pause after a week without activity. netlify/functions/keepalive.mjs
+-- calls this once a day. It returns 1 and reads no data, so it is safe to leave open.
+create or replace function public.ping() returns int language sql stable as $$ select 1 $$;
+revoke all on function public.ping() from public;
+grant execute on function public.ping() to anon, authenticated;
+
 -- Private photo bucket -------------------------------------------------------
 insert into storage.buckets (id, name, public) values ('photos', 'photos', false)
 on conflict (id) do update set public = false;
